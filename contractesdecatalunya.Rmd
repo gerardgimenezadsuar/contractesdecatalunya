@@ -1,0 +1,251 @@
+---
+title: "Contractes públics a Catalunya"
+#author: "Gerard Giménez Adsuar"
+#date: "`r format(Sys.time(), '%d/%m/%Y')`"
+output: html_document
+runtime: shiny
+---
+
+
+```{r, message=FALSE, warning=FALSE, include=FALSE}
+
+library(dplyr)
+library(leaflet)
+#library(tidyverse)
+
+
+
+```
+## {.tabset .tabset-fade .tabset-pills}
+
+
+```{r, echo=FALSE}
+contractes <- readRDS("contractes.rds") # reloads 2019-2020 data
+historic <- readRDS("historic.rds") # reloads the historic data
+```
+
+```{r, include=FALSE}
+options(timeout=200)
+
+today <- Sys.Date()
+contractes$DATA.ADJUDICACIO <- as.Date(contractes$DATA.ADJUDICACIO,"%d/%m/%Y")
+
+```
+
+Última actualització: `r format(file.info("contractes.rds")$mtime, "%d/%m/%y %H:%M")`  
+
+Durant el 2020 es van adjudicar **`r format(nrow(contractes %>% dplyr::filter(EXERCICI %in% 2020)), nsmall=0, big.mark=".", decimal.mark="," )`** contractes públics, amb un import agregat de **€`r format(contractes %>% dplyr::filter(EXERCICI %in% 2020) %>% dplyr::summarise(sum(IMPORT.ADJUDICACIO)) , nsmall=2, big.mark=".", decimal.mark="," ) `**. Així es van repartir.
+
+
+### Adjudicacions totals
+
+```{r, echo = F}
+sidebarLayout(
+    
+    sidebarPanel(
+      #h5("Select one option from the list"), 
+      selectInput("date_selector_total",
+                  label = "Selecciona un any:",
+                  choices = c(2020,2021),
+                  selected = 2020),
+
+ 
+    ),
+    mainPanel(
+      strong("Contractació pública a Catalunya"),
+      h5("  "),
+      DT::dataTableOutput("total_2020"),
+      # h5("  "),
+      # strong("Smoothed scatter plot of monthly pollution components for available ABS of Catalonia."),
+      # plotlyOutput("pol_graph", width = "90%")
+      
+    )
+  )
+
+
+
+filtered_total <- reactive({
+  con <- contractes %>%
+    dplyr::filter(EXERCICI %in% input$date_selector_total) %>%
+    dplyr::group_by(ADJUDICATARI) %>%
+    dplyr::summarise("Total adjudicat (en €)" = sum(IMPORT.ADJUDICACIO),
+                     "Nº contractes totals" =n(),
+                     "Nº contractes menors al límit d'import" = sum(IMPORT.ADJUDICACIO < 15000 & IMPORT.ADJUDICACIO > 14950) + sum(IMPORT.ADJUDICACIO < 40000 & IMPORT.ADJUDICACIO > 39950),
+                     "Durada mitjana (en anys)" = round(mean(ANYS.DURADA),2))
+    con <- con[order(-con$`Total adjudicat (en €)`),]
+    con$`Total adjudicat (en €)` <- format(con$`Total adjudicat (en €)`, nsmall=2, big.mark=".", decimal.mark="," )
+    colnames(con) <- c("ADJUDICATARI", paste0("Total adjudicat ",input$date_selector_total," (en €)"),
+                       "Nº contractes totals",
+                       "Nº contractes menors al límit d'import",
+                       "Durada mitjana (en anys)")
+    con
+  })
+
+
+  # Plot display
+  output$total_2020 <- DT::renderDataTable({
+    filtered_total()
+  }, rownames = F, extensions = "Buttons", options = list(dom = "Bfrtip", buttons = c("csv", "excel", "pdf")))
+
+
+```
+
+
+### Per organisme públic
+
+```{r, echo = F}
+sidebarLayout(
+    
+    sidebarPanel(
+      #h5("Select one option from the list"), 
+      selectInput("org_selector",
+                  label = "Selecciona un organisme públic:",
+                  choices = sort(unique(contractes$ORGANISME.CONTRACTANT)),
+                  selected = "Departament de Salut"),
+      selectInput("date_selector",
+                  label = "Selecciona un any:",
+                  choices = c(2020, 2021),
+                  selected = 2020),
+
+ 
+    ),
+    mainPanel(
+      strong("Contractació pública a Catalunya, per organisme públic"),
+      h5("  "),
+      DT::dataTableOutput("contractes_2020"),
+      # h5("  "),
+      # strong("Smoothed scatter plot of monthly pollution components for available ABS of Catalonia."),
+      # plotlyOutput("pol_graph", width = "90%")
+      
+    )
+  )
+
+
+
+filtered_contr <- reactive({
+  con <- contractes %>%
+    dplyr::filter(EXERCICI %in% input$date_selector) %>%
+    dplyr::filter(ORGANISME.CONTRACTANT == input$org_selector) %>%
+    dplyr::group_by(ADJUDICATARI) %>%
+    dplyr::summarise("Total adjudicat (en €)" = sum(IMPORT.ADJUDICACIO),
+                     "Nº contractes totals" =n(),
+                     "Nº contractes menors al límit d'import" = sum(IMPORT.ADJUDICACIO < 15000 & IMPORT.ADJUDICACIO > 14950) + sum(IMPORT.ADJUDICACIO < 40000 & IMPORT.ADJUDICACIO > 39950),
+                     "Durada mitjana (en anys)" = round(mean(ANYS.DURADA),2))
+    con <- con[order(-con$`Total adjudicat (en €)`),]
+    con$`Total adjudicat (en €)` <- format(con$`Total adjudicat (en €)`, nsmall=2, big.mark=".", decimal.mark="," )
+    colnames(con) <- c("ADJUDICATARI", paste0("Total adjudicat ",input$date_selector," (en €)"),
+                       "Nº contractes totals",
+                       "Nº contractes menors al límit d'import",
+                       "Durada mitjana (en anys)")
+    con
+  })
+
+
+  # Plot display
+  output$contractes_2020 <- DT::renderDataTable({
+    filtered_contr()
+  }, rownames = F, extensions = "Buttons", options = list(dom = "Bfrtip", buttons = c("csv", "excel", "pdf")))
+
+
+```
+
+
+
+
+### Últimes adjudicacions per organisme
+
+```{r, echo = F}
+
+sidebarLayout(
+    
+    sidebarPanel(
+      #h5("Select one option from the list"), 
+      selectInput("org_selector_last",
+                  label = "Selecciona un organisme públic:",
+                  choices = sort(unique(contractes$ORGANISME.CONTRACTANT)),
+                  selected = "Ajuntament de Barcelona"),
+
+ 
+    ),
+    mainPanel(
+      strong("Adjudicacions recents (últims 6 mesos)"),
+      h5("  "),
+      DT::dataTableOutput("last_2020"),
+      # h5("  "),
+      # strong("Smoothed scatter plot of monthly pollution components for available ABS of Catalonia."),
+      # plotlyOutput("pol_graph", width = "90%")
+      
+    )
+  )
+
+
+
+filtered_last <- reactive({
+  con <- contractes %>%
+    dplyr::filter(DATA.ADJUDICACIO > as.Date(today - 180)) %>%
+    dplyr::filter(ORGANISME.CONTRACTANT == input$org_selector_last) %>%
+    dplyr::group_by(ADJUDICATARI) %>%
+    dplyr::summarise("Total adjudicat (en €)" = sum(IMPORT.ADJUDICACIO),
+                     "Nº contractes" =n(),
+                     "Nº contractes menors al límit d'import" = sum(IMPORT.ADJUDICACIO < 15000 & IMPORT.ADJUDICACIO > 14950) + sum(IMPORT.ADJUDICACIO < 40000 & IMPORT.ADJUDICACIO > 39950),
+                     "Durada mitjana (en anys)" = round(mean(ANYS.DURADA),2))
+    con <- con[order(-(con$`Total adjudicat (en €)`)),]
+    con$`Total adjudicat (en €)` <- format(con$`Total adjudicat (en €)`, nsmall=2, big.mark=".", decimal.mark="," )
+    con
+  })
+
+
+  # Plot display
+  output$last_2020 <- DT::renderDataTable({
+    filtered_last()
+  }, rownames = F, extensions = "Buttons", options = list(dom = "Bfrtip", buttons = c("csv", "excel", "pdf"))) 
+
+
+
+
+```
+
+
+### Històric per adjudicatari
+
+```{r, echo=F}
+mainPanel(
+      strong("Històric de la contractació pública a Catalunya"),
+      h6("Es mostren els 117.082 adjudicataris dels darrers 4 anys"),
+      DT::dataTableOutput("historic_t"),
+      # h5("  "),
+      # strong("Smoothed scatter plot of monthly pollution components for available ABS of Catalonia."),
+      # plotlyOutput("pol_graph", width = "90%")
+    )
+
+
+
+
+  # Plot display
+  output$historic_t <- DT::renderDataTable({
+    historic
+  }, rownames = F, extensions = "Buttons", options = list(dom = "Bfrtip", buttons = c("csv", "excel", "pdf")))
+
+
+
+
+```
+
+
+### Sobre la web
+
+Hola, sóc el Gerard i he fet aquesta web per afegir transparència a la contractació pública del nostre país. 
+
+Aquí podreu trobar tots els adjudicataris (empreses/autònoms que han guanyat contractes públics) dels darrers anys a Catalunya. 
+
+Els organismes públics contractants són tant a nivell d'ajuntament, com al dels diversos Departaments de la Generalitat, passant per les Diputacions, Consells Comarcals, Universitats, etc. 
+
+Per ara, l'única font de dades són les oficials publicades per les **Dades Obertes de Catalunya**, en el seu document: "La contractació a Catalunya". En total, he processat més **d'1,4 milions de contractes i més de 120.000 adjudicataris** per a construir la informació de la que disposeu. En el portal oficial de la Generalitat podeu consultar cada un d'aquests contractes per tenir informació detallada sobre el concepte d'aquests.
+
+Aquest resum de xifres que publico s'actualitza cada dia de forma automàtica. 
+
+Espero que us sigui d'utilitat,
+
+Gerard
+
+***Important: Estem en fase de proves, si teniu qualsevol consulta/dubte o creieu que heu detectat un error, podeu escriure'm a gimenezadsuar@gmail.com.***
